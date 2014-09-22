@@ -49,10 +49,30 @@ else:
 from distutils.dist import Distribution
 
 import setupext
+from distutils.command.build_ext import build_ext
 from setupext import print_line, print_raw, print_message, print_status
 
 # Get the version from the source code
 __version__ = setupext.Matplotlib().check()
+
+
+class build_ext_subclass(build_ext):
+    """
+    This fixes a problem with building packages when environmental variable
+    CXX consists of compiler name + arguments with spaces in the middle.
+    build_ext instead expects an array where each element is a CLI token, and
+    so normally compilation would fail with error "unable to execute
+    `cxx[0]`: No such file or directory. This subclass of build_ext extracts
+    the compiler name and places remaining arguments back into the array
+    """
+    def build_extensions(self):
+        ccm = self.compiler.compiler
+        if ' ' in ccm:
+            self.compiler.compiler = ccm[0].split(' ') + ccm[1:]
+        cxx = self.compiler.compiler_cxx
+        if ' ' in cxx[0]:
+            self.compiler.compiler_cxx = cxx[0].split(' ') + cxx[1:]
+        build_ext.build_extensions(self)
 
 
 # These are the packages in the order we want to display them.  This
@@ -137,7 +157,6 @@ if __name__ == '__main__':
     setup_requires = []
     default_backend = None
 
-
     # Go through all of the packages and figure out which ones we are
     # going to build/install.
     print_line()
@@ -170,7 +189,6 @@ if __name__ == '__main__':
                         default_backend = package.name
     print_raw('')
 
-
     # Abort if any of the required packages can not be built.
     if required_failed:
         print_line()
@@ -179,7 +197,6 @@ if __name__ == '__main__':
             "be built: %s" %
             ', '.join(x.name for x in required_failed))
         sys.exit(1)
-
 
     # Now collect all of the information we need to build all of the
     # packages.
@@ -209,7 +226,6 @@ if __name__ == '__main__':
     with open('lib/matplotlib/mpl-data/matplotlibrc', 'w') as fd:
         fd.write(template % {'backend': default_backend})
 
-
     # Build in verbose mode if requested
     if setupext.options['verbose']:
         for mod in ext_modules:
@@ -225,8 +241,8 @@ if __name__ == '__main__':
     # Avoid installing setup_requires dependencies if the user just
     # queries for information
     if (any('--' + opt in sys.argv for opt in
-           Distribution.display_option_names + ['help']) or
-        'clean' in sys.argv):
+            Distribution.display_option_names + ['help']) or
+            'clean' in sys.argv):
         setup_requires = []
 
     # Finally, pass this all along to distutils to do the heavy lifting.
@@ -246,9 +262,10 @@ if __name__ == '__main__':
         """,
         license="BSD",
         packages=packages,
-        namespace_packages = namespace_packages,
+        namespace_packages=namespace_packages,
         platforms='any',
         py_modules=py_modules,
+        cmdclass={'build_ext': build_ext_subclass},
         ext_modules=ext_modules,
         package_dir=package_dir,
         package_data=package_data,
